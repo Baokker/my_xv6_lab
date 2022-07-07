@@ -268,6 +268,10 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
+
+  // add mask
+  np->mask = p->mask;
+
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
