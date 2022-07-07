@@ -494,6 +494,16 @@ scheduler(void)
   }
 }
 
+void procnum(uint64* result){
+  *result = 0;
+  // must use 'struct' in c
+  for (struct proc *p = proc;p < &proc[NPROC];p++){
+    if (p->state != UNUSED){
+      (*result)++;
+    }
+  }
+}
+
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this
