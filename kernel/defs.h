@@ -187,6 +187,13 @@ pagetable_t     kvm_init_one();
 
 pte_t *         walk(pagetable_t pagetable, uint64 va, int alloc);
 
+// copy user pagetable to kernel page table
+void            uvm2kvm(pagetable_t u, pagetable_t k, uint64 from, uint64 to);
+
+// copy new
+int             copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
+int             copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
+
 // plic.c
 void            plicinit(void);
 void            plicinithart(void);
