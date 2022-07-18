@@ -6,6 +6,8 @@
 #include "proc.h"
 #include "defs.h"
 
+extern pte_t* walk(pagetable_t, uint64, int);
+
 struct spinlock tickslock;
 uint ticks;
 
@@ -65,7 +67,47 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } 
+  else if (r_scause() == 15) { // write page fault
+    uint64 va = PGROUNDDOWN(r_stval());
+    pte_t *pte;
+    if (va > p->sz || (pte = walk(p->pagetable, va, 0)) == 0){
+      p->killed = 1;
+      goto end;
+    }
+
+    if (((*pte) & PTE_RSW) == 0 || ((*pte) & PTE_V) == 0 || ((*pte) & PTE_U) == 0){
+      p->killed = 1;
+      goto end;
+    }
+
+    uint64 pa = PTE2PA(*pte);
+    acquire_ref_lock();
+    uint ref = get_kmem_ref((void*)pa);
+    if (ref == 1){
+      *pte = ((*pte) & (~PTE_RSW)) | PTE_W;
+    }
+    else {
+      char* mem = kalloc();
+      if (mem == 0){
+        p->killed = 1;
+        release_ref_lock();
+        goto end;
+      }
+
+      memmove(mem, (char*)pa, PGSIZE);
+      uint flag = (PTE_FLAGS(*pte) | PTE_W) & (~PTE_RSW);
+      if (mappages(p->pagetable, va, PGSIZE, (uint64)mem,flag) != 0){
+        kfree(mem);
+        p->killed = 1;
+        release_ref_lock();
+        goto end;
+      }
+      kfree((void*)pa);
+    }
+    release_ref_lock();
+  }
+  else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
@@ -73,6 +115,7 @@ usertrap(void)
     p->killed = 1;
   }
 
+end:
   if(p->killed)
     exit(-1);
 
