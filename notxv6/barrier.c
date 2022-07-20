@@ -30,7 +30,7 @@ barrier()
   // Block until all threads have called barrier() and
   // then increment bstate.round.
   //
-  
+
 }
 
 static void *
