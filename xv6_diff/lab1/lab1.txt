@@ -1,0 +1,273 @@
+diff --git a/.vscode/settings.json b/.vscode/settings.json
+new file mode 100644
+index 0000000..cd2712a
+--- /dev/null
++++ b/.vscode/settings.json
+@@ -0,0 +1,7 @@
++{
++    "files.associations": {
++        "syscall.h": "c",
++        "sysinfo.h": "c",
++        "defs.h": "c"
++    }
++}
+diff --git a/Makefile b/Makefile
+index 0fbaf7c..b2addd4 100644
+--- a/Makefile
++++ b/Makefile
+@@ -149,6 +149,11 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
++	$U/_sleep\
++	$U/_pingpong\
++	$U/_find\
++	$U/_xargs\
++	$U/_primes\
+ 
+ 
+ ifeq ($(LAB),syscall)
+diff --git a/barrier b/barrier
+new file mode 100755
+index 0000000..1d51e0b
+Binary files /dev/null and b/barrier differ
+diff --git a/ph b/ph
+new file mode 100755
+index 0000000..02f4c79
+Binary files /dev/null and b/ph differ
+diff --git a/user/find.c b/user/find.c
+new file mode 100644
+index 0000000..668a71b
+--- /dev/null
++++ b/user/find.c
+@@ -0,0 +1,76 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++#include "kernel/fs.h"
++
++// strcmp return 0 if two char* is equal !!
++
++void find(char *path, char *filename)
++{
++  char buf[512], *p;
++  int fd;
++  struct dirent de;
++  struct stat st;
++
++  if ((fd = open(path, 0)) < 0)
++  {
++    fprintf(2, "find: cannot open %s\n", path);
++    return;
++  }
++
++  if (fstat(fd, &st) < 0)
++  {
++    fprintf(2, "find: cannot stat %s\n", path);
++    close(fd);
++    return;
++  }
++
++  if (st.type == T_FILE)
++  { // it should be a dir
++    fprintf(2, "find: can't find files in a file\n");
++    exit(1);
++  }
++
++  // T_DIR:
++  if (strlen(path) + 1 + DIRSIZ + 1 > sizeof buf)
++  { // too long ..
++    printf("find: path too long\n");
++    exit(1);
++  }
++
++  strcpy(buf, path);
++
++  p = buf + strlen(buf);
++  *p++ = '/'; // p is pointed to the last file/dir name
++
++  while (read(fd, &de, sizeof(de)) == sizeof(de))
++  {
++    if (de.inum == 0)
++      continue;
++    memmove(p, de.name, DIRSIZ);
++    p[DIRSIZ] = 0;
++    if (stat(buf, &st) < 0)
++    {
++      fprintf(2, "find: cannot stat %s\n", buf);
++      continue;
++    }
++    // return 0 if s1 equals to s2 !!
++    if (st.type == T_DIR && strcmp(".", p) != 0 && strcmp("..", p) != 0)
++      find(buf, filename); // recursion
++    else if (st.type == T_FILE && strcmp(p, filename) == 0)
++      printf("%s\n", buf); // print the output
++  }
++
++  close(fd);
++}
++
++int main(int argc, char *argv[])
++{
++  if (argc < 2)
++  {
++    fprintf(2, "too little arguments..\n");
++    exit(1);
++  }
++  find(argv[1], argv[2]);
++  exit(0);
++}
+diff --git a/user/pingpong.c b/user/pingpong.c
+new file mode 100644
+index 0000000..900460c
+--- /dev/null
++++ b/user/pingpong.c
+@@ -0,0 +1,35 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++int main(int argc, char *argv[]){
++    if (argc != 1){
++        fprintf(2,"Error: No need for arguments...\n");
++        exit(1);
++    }
++
++    int p[2];
++    pipe(p);
++
++    if (fork() == 0){// child
++        close(p[0]); // close write
++
++        char temp = 'x';
++        if (write(p[1],&temp,1))
++            fprintf(0,"%d: received ping\n",getpid());    
++
++        close(p[1]);
++    }
++    else{
++        wait((int *)0);
++        close(p[1]); // close read
++
++        char temp;
++        if (read(p[0],&temp,1))
++            fprintf(0,"%d: received pong\n",getpid());    
++
++        close(p[0]);    
++    }
++
++    exit(0);
++}
+diff --git a/user/primes.c b/user/primes.c
+new file mode 100644
+index 0000000..364faab
+--- /dev/null
++++ b/user/primes.c
+@@ -0,0 +1,45 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++void primes(int *input, int count)
++{
++  if (count == 0) {
++    return;
++  }
++
++  int p[2], i = 0, prime = *input;
++  pipe(p);
++  char buff[4];
++  printf("prime %d\n", prime);
++  if (fork() == 0) {
++	close(p[0]);
++	for (; i < count; i++) {
++	  write(p[1], (char *)(input + i), 4);
++	}
++	close(p[1]);
++	exit(0);
++  } else {
++	close(p[1]);
++	count = 0;
++	while (read(p[0], buff, 4) != 0) {
++	  int temp = *((int *)buff);
++	  if (temp % prime) {
++	    *input++ = temp;
++		  count++;
++	  }
++	}
++	primes(input - count, count);
++	close(p[0]);
++	wait(0);
++  }
++}
++
++int main(int argc, char *argv[]) {
++  int input[34], i = 0;
++  for (; i < 34; i++) {
++    input[i] = i + 2;
++  }
++  primes(input, 34);
++  exit(0);
++}
+diff --git a/user/sleep.c b/user/sleep.c
+new file mode 100644
+index 0000000..dba5dfe
+--- /dev/null
++++ b/user/sleep.c
+@@ -0,0 +1,14 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++int main(int argc, char *argv[]){
++    if (argc < 2){
++        fprintf(2,"Error: Lacking an argument...\n");
++        exit(1);
++    }
++
++    sleep(atoi(argv[1]));
++
++    exit(0);
++}
+diff --git a/user/xargs.c b/user/xargs.c
+new file mode 100644
+index 0000000..2fcd34e
+--- /dev/null
++++ b/user/xargs.c
+@@ -0,0 +1,36 @@
++#include "kernel/types.h"
++#include "user/user.h"
++#include "kernel/param.h"
++
++int main(int argc, char *argv[]) {
++  int i, count = 0, k, m = 0;
++  char* line_split[MAXARG], *p;
++  char block[32], buf[32];
++  p = buf;
++  for (i = 1; i < argc; i++) {
++	line_split[count++] = argv[i];
++  }
++  while ((k = read(0, block, sizeof(block))) > 0) {
++    for (i = 0; i < k; i++) {
++	  if (block[i] == '\n') {
++		buf[m] = 0;
++		line_split[count++] = p;
++		line_split[count] = 0;
++		m = 0;
++		p = buf;
++		count = argc - 1;
++		if (fork() == 0) {
++		  exec(argv[1], line_split);
++		}
++		wait(0);
++	  } else if (block[i] == ' ') {
++		buf[m++] = 0;
++		line_split[count++] = p;
++		p = &buf[m];
++	  } else {
++		buf[m++] = block[i];
++	  }
++	}
++  }
++  exit(0);
++}

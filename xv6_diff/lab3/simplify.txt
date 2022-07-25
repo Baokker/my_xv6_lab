@@ -1,0 +1,216 @@
+diff --git a/kernel/defs.h b/kernel/defs.h
+index 2fb5642..b7c112d 100644
+--- a/kernel/defs.h
++++ b/kernel/defs.h
+@@ -187,6 +187,13 @@ pagetable_t     kvm_init_one();
+ 
+ pte_t *         walk(pagetable_t pagetable, uint64 va, int alloc);
+ 
++// copy user pagetable to kernel page table
++void            uvm2kvm(pagetable_t u, pagetable_t k, uint64 from, uint64 to);
++
++// copy new
++int             copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
++int             copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
++
+ // plic.c
+ void            plicinit(void);
+ void            plicinithart(void);
+diff --git a/kernel/exec.c b/kernel/exec.c
+index 841bb64..3e59ee3 100644
+--- a/kernel/exec.c
++++ b/kernel/exec.c
+@@ -119,6 +119,8 @@ exec(char *path, char **argv)
+   // add vmprint
+   if(p->pid==1) vmprint(p->pagetable);
+ 
++  uvm2kvm(p->pagetable, p->kernelpgtbl, 0, p->sz);
++
+   return argc; // this ends up in a0, the first argument to main(argc, argv)
+ 
+  bad:
+diff --git a/kernel/proc.c b/kernel/proc.c
+index 5e33362..b1b0b56 100644
+--- a/kernel/proc.c
++++ b/kernel/proc.c
+@@ -268,6 +268,8 @@ userinit(void)
+   uvminit(p->pagetable, initcode, sizeof(initcode));
+   p->sz = PGSIZE;
+ 
++  uvm2kvm(p->pagetable, p->kernelpgtbl, 0, p->sz); // copy from user to kernel
++
+   // prepare for the very first "return" from kernel to user.
+   p->trapframe->epc = 0;      // user program counter
+   p->trapframe->sp = PGSIZE;  // user stack pointer
+@@ -296,6 +298,7 @@ growproc(int n)
+   } else if(n < 0){
+     sz = uvmdealloc(p->pagetable, sz, sz + n);
+   }
++  uvm2kvm(p->pagetable, p->kernelpgtbl, sz - n, sz);
+   p->sz = sz;
+   return 0;
+ }
+@@ -322,6 +325,8 @@ fork(void)
+   }
+   np->sz = p->sz;
+ 
++  uvm2kvm(np->pagetable, np->kernelpgtbl, 0, np->sz);
++
+   np->parent = p;
+ 
+   // copy saved user registers.
+diff --git a/kernel/virtio_disk.c b/kernel/virtio_disk.c
+index 50f2d91..06e0645 100644
+--- a/kernel/virtio_disk.c
++++ b/kernel/virtio_disk.c
+@@ -17,8 +17,6 @@
+ #include "buf.h"
+ #include "virtio.h"
+ 
+-#include "proc.h"
+-
+ // the address of virtio mmio register r.
+ #define R(r) ((volatile uint32 *)(VIRTIO0 + (r)))
+ 
+diff --git a/kernel/vm.c b/kernel/vm.c
+index 6ca9cc9..5a09856 100644
+--- a/kernel/vm.c
++++ b/kernel/vm.c
+@@ -407,23 +407,24 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
+ int
+ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+ {
+-  uint64 n, va0, pa0;
+-
+-  while(len > 0){
+-    va0 = PGROUNDDOWN(srcva);
+-    pa0 = walkaddr(pagetable, va0);
+-    if(pa0 == 0)
+-      return -1;
+-    n = PGSIZE - (srcva - va0);
+-    if(n > len)
+-      n = len;
+-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
+-
+-    len -= n;
+-    dst += n;
+-    srcva = va0 + PGSIZE;
+-  }
+-  return 0;
++  // uint64 n, va0, pa0;
++
++  // while(len > 0){
++  //   va0 = PGROUNDDOWN(srcva);
++  //   pa0 = walkaddr(pagetable, va0);
++  //   if(pa0 == 0)
++  //     return -1;
++  //   n = PGSIZE - (srcva - va0);
++  //   if(n > len)
++  //     n = len;
++  //   memmove(dst, (void *)(pa0 + (srcva - va0)), n);
++
++  //   len -= n;
++  //   dst += n;
++  //   srcva = va0 + PGSIZE;
++  // }
++  // return 0;
++  return copyin_new(pagetable, dst, srcva, len);
+ }
+ 
+ // Copy a null-terminated string from user to kernel.
+@@ -433,40 +434,41 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+ int
+ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
+ {
+-  uint64 n, va0, pa0;
+-  int got_null = 0;
+-
+-  while(got_null == 0 && max > 0){
+-    va0 = PGROUNDDOWN(srcva);
+-    pa0 = walkaddr(pagetable, va0);
+-    if(pa0 == 0)
+-      return -1;
+-    n = PGSIZE - (srcva - va0);
+-    if(n > max)
+-      n = max;
+-
+-    char *p = (char *) (pa0 + (srcva - va0));
+-    while(n > 0){
+-      if(*p == '\0'){
+-        *dst = '\0';
+-        got_null = 1;
+-        break;
+-      } else {
+-        *dst = *p;
+-      }
+-      --n;
+-      --max;
+-      p++;
+-      dst++;
+-    }
+-
+-    srcva = va0 + PGSIZE;
+-  }
+-  if(got_null){
+-    return 0;
+-  } else {
+-    return -1;
+-  }
++  // uint64 n, va0, pa0;
++  // int got_null = 0;
++
++  // while(got_null == 0 && max > 0){
++  //   va0 = PGROUNDDOWN(srcva);
++  //   pa0 = walkaddr(pagetable, va0);
++  //   if(pa0 == 0)
++  //     return -1;
++  //   n = PGSIZE - (srcva - va0);
++  //   if(n > max)
++  //     n = max;
++
++  //   char *p = (char *) (pa0 + (srcva - va0));
++  //   while(n > 0){
++  //     if(*p == '\0'){
++  //       *dst = '\0';
++  //       got_null = 1;
++  //       break;
++  //     } else {
++  //       *dst = *p;
++  //     }
++  //     --n;
++  //     --max;
++  //     p++;
++  //     dst++;
++  //   }
++
++  //   srcva = va0 + PGSIZE;
++  // }
++  // if(got_null){
++  //   return 0;
++  // } else {
++  //   return -1;
++  // }
++  return copyinstr_new(pagetable, dst, srcva, max);
+ }
+ 
+ // simulate freewalk to print vm
+@@ -498,3 +500,18 @@ void vmprint(pagetable_t pagetable){
+   printwalk(pagetable, 1);
+ }
+ 
++void uvm2kvm(pagetable_t userpgtbl, pagetable_t kernelpgtbl, uint64 from, uint64 to)
++{
++  if (from > PLIC) // PLIC limit
++    panic("uvm2kvm: from larger than PLIC");
++  from = PGROUNDDOWN(from); // align
++  for (uint64 i = from; i < to; i += PGSIZE)
++  {
++    pte_t *pte_user = walk(userpgtbl, i, 0); 
++    pte_t *pte_kernel = walk(kernelpgtbl, i, 1); 
++    if (pte_kernel == 0)
++      panic("uvm2kvm: allocating kernel pagetable fails");
++    *pte_kernel = *pte_user;
++    *pte_kernel &= ~PTE_U;
++  }
++}
+\ No newline at end of file

@@ -1,0 +1,316 @@
+diff --git a/Makefile b/Makefile
+index d8509b1..93ba80e 100644
+--- a/Makefile
++++ b/Makefile
+@@ -175,7 +175,7 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
+-
++	$U/_mmaptest\
+ 
+ 
+ 
+diff --git a/kernel/proc.c b/kernel/proc.c
+index ba1a9e3..30f8898 100644
+--- a/kernel/proc.c
++++ b/kernel/proc.c
+@@ -6,6 +6,8 @@
+ #include "proc.h"
+ #include "defs.h"
+ 
++#include "fcntl.h"
++
+ struct cpu cpus[NCPU];
+ 
+ struct proc proc[NPROC];
+@@ -302,6 +304,13 @@ fork(void)
+ 
+   np->state = RUNNABLE;
+ 
++  for(int i = 0; i < VMASIZE; i++) {
++    if(p->vma[i].used){
++      memmove(&(np->vma[i]), &(p->vma[i]), sizeof(p->vma[i]));
++      filedup(p->vma[i].file);
++    }
++  }
++
+   release(&np->lock);
+ 
+   return pid;
+@@ -353,6 +362,16 @@ exit(int status)
+     }
+   }
+ 
++  for(int i = 0; i < VMASIZE; i++) {
++    if(p->vma[i].used) {
++      if(p->vma[i].flags & MAP_SHARED)
++        filewrite(p->vma[i].file, p->vma[i].addr, p->vma[i].length);
++      fileclose(p->vma[i].file);
++      uvmunmap(p->pagetable, p->vma[i].addr, p->vma[i].length/PGSIZE, 1);
++      p->vma[i].used = 0;
++    }
++  }
++
+   begin_op();
+   iput(p->cwd);
+   end_op();
+diff --git a/kernel/proc.h b/kernel/proc.h
+index 9c16ea7..0932ba8 100644
+--- a/kernel/proc.h
++++ b/kernel/proc.h
+@@ -1,3 +1,5 @@
++#include "defs.h"
++
+ // Saved registers for kernel context switches.
+ struct context {
+   uint64 ra;
+@@ -80,6 +82,19 @@ struct trapframe {
+   /* 280 */ uint64 t6;
+ };
+ 
++#define VMASIZE 16
++struct vma
++{
++  struct file *file;
++  int fd;
++  int used;
++  uint64 addr;
++  int length;
++  int prot;
++  int flags;
++  int offset;
++};
++
+ enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+ 
+ // Per-process state
+@@ -103,4 +118,5 @@ struct proc {
+   struct file *ofile[NOFILE];  // Open files
+   struct inode *cwd;           // Current directory
+   char name[16];               // Process name (debugging)
+-};
++  struct vma vma[VMASIZE];     // vma
++};
+\ No newline at end of file
+diff --git a/kernel/syscall.c b/kernel/syscall.c
+index c1b3670..7320633 100644
+--- a/kernel/syscall.c
++++ b/kernel/syscall.c
+@@ -104,6 +104,8 @@ extern uint64 sys_unlink(void);
+ extern uint64 sys_wait(void);
+ extern uint64 sys_write(void);
+ extern uint64 sys_uptime(void);
++extern uint64 sys_mmap(void);
++extern uint64 sys_munmap(void);
+ 
+ static uint64 (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -127,6 +129,8 @@ static uint64 (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_mmap]    sys_mmap,
++[SYS_munmap]  sys_munmap,
+ };
+ 
+ void
+diff --git a/kernel/syscall.h b/kernel/syscall.h
+index bc5f356..f522c17 100644
+--- a/kernel/syscall.h
++++ b/kernel/syscall.h
+@@ -20,3 +20,5 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_mmap   22
++#define SYS_munmap 23
+\ No newline at end of file
+diff --git a/kernel/sysfile.c b/kernel/sysfile.c
+index 5dc453b..59d5afb 100644
+--- a/kernel/sysfile.c
++++ b/kernel/sysfile.c
+@@ -484,3 +484,71 @@ sys_pipe(void)
+   }
+   return 0;
+ }
++
++uint64 sys_mmap(void) {
++  uint64 addr;
++  int length, prot, flags, fd, offset;
++  struct proc *p = myproc();
++  struct file *file;
++  if(argaddr(0, &addr) || argint(1, &length) || argint(2, &prot) ||
++    argint(3, &flags) || argfd(4, &fd, &file) || argint(5, &offset)) 
++    return -1;
++  
++  if(!file->writable && (prot & PROT_WRITE) && flags == MAP_SHARED)
++    return -1;
++
++  length = PGROUNDUP(length);
++  if(p->sz > MAXVA - length)
++    return -1;
++
++  for(int i = 0; i < VMASIZE; i++) {
++    if(p->vma[i].used == 0) {
++      p->vma[i].used = 1;
++      p->vma[i].addr = p->sz;
++      p->vma[i].length = length;
++      p->vma[i].prot = prot;
++      p->vma[i].flags = flags;
++      p->vma[i].fd = fd;
++      p->vma[i].file = file;
++      p->vma[i].offset = offset;
++      filedup(file);
++      p->sz += length;
++      return p->vma[i].addr;
++    }
++  }
++  return -1;
++}
++
++uint64
++sys_munmap(void)
++{
++  uint64 addr;
++  int length;
++  struct proc *p = myproc();
++  struct vma *vma = 0;
++  if(argaddr(0, &addr) || argint(1, &length))
++    return -1;
++  addr = PGROUNDDOWN(addr);
++  length = PGROUNDUP(length);
++  for(int i = 0; i < VMASIZE; i++) {
++    if (addr >= p->vma[i].addr || addr < p->vma[i].addr + p->vma[i].length) {
++      vma = &p->vma[i];
++      break;
++    }
++  }
++  if(vma == 0) 
++    return 0;
++  if(vma->addr == addr) {
++    vma->addr += length;
++    vma->length -= length;
++    if(vma->flags & MAP_SHARED)
++      filewrite(vma->file, addr, length);
++    uvmunmap(p->pagetable, addr, length/PGSIZE, 1);
++    if(vma->length == 0) {
++      fileclose(vma->file);
++      vma->used = 0;
++    }
++  }
++  return 0;
++}
++
+diff --git a/kernel/trap.c b/kernel/trap.c
+index a63249e..afb8bb6 100644
+--- a/kernel/trap.c
++++ b/kernel/trap.c
+@@ -6,6 +6,11 @@
+ #include "proc.h"
+ #include "defs.h"
+ 
++#include "fcntl.h"
++#include "fs.h"
++#include "sleeplock.h"
++#include "file.h"
++
+ struct spinlock tickslock;
+ uint ticks;
+ 
+@@ -67,7 +72,46 @@ usertrap(void)
+     syscall();
+   } else if((which_dev = devintr()) != 0){
+     // ok
+-  } else {
++  } 
++  else if (r_scause() == 13 || r_scause() == 15) {
++    uint64 va = r_stval();
++    if(va >= p->sz || va > MAXVA || PGROUNDUP(va) == PGROUNDDOWN(p->trapframe->sp))
++      p->killed = 1;
++	  else {
++      struct vma *vma = 0;
++      for (int i = 0; i < VMASIZE; i++) {
++        if (p->vma[i].used == 1 && va >= p->vma[i].addr && 
++            va < p->vma[i].addr + p->vma[i].length) {
++          vma = &p->vma[i];
++          break;
++        }
++      }
++
++      if(vma) {
++        va = PGROUNDDOWN(va);
++        uint64 offset = va - vma->addr;
++        uint64 mem = (uint64)kalloc();
++        if(mem == 0) {
++          p->killed = 1;
++        } 
++        else {
++          memset((void*)mem, 0, PGSIZE);
++		      ilock(vma->file->ip);
++          readi(vma->file->ip, 0, mem, offset, PGSIZE);
++          iunlock(vma->file->ip);
++          int flag = PTE_U;
++          if(vma->prot & PROT_READ) flag |= PTE_R;
++          if(vma->prot & PROT_WRITE) flag |= PTE_W;
++          if(vma->prot & PROT_EXEC) flag |= PTE_X;
++          if(mappages(p->pagetable, va, PGSIZE, mem, flag) != 0) {
++            kfree((void*)mem);
++            p->killed = 1;
++          }
++        }
++      }
++    }
++  }
++  else {
+     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+     p->killed = 1;
+diff --git a/kernel/vm.c b/kernel/vm.c
+index b47f111..41892f9 100644
+--- a/kernel/vm.c
++++ b/kernel/vm.c
+@@ -172,7 +172,8 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+     if((pte = walk(pagetable, a, 0)) == 0)
+       panic("uvmunmap: walk");
+     if((*pte & PTE_V) == 0)
+-      panic("uvmunmap: not mapped");
++      // panic("uvmunmap: not mapped");
++      continue;
+     if(PTE_FLAGS(*pte) == PTE_V)
+       panic("uvmunmap: not a leaf");
+     if(do_free){
+@@ -306,7 +307,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+     if((pte = walk(old, i, 0)) == 0)
+       panic("uvmcopy: pte should exist");
+     if((*pte & PTE_V) == 0)
+-      panic("uvmcopy: page not present");
++      // panic("uvmcopy: page not present");
++      continue;
+     pa = PTE2PA(*pte);
+     flags = PTE_FLAGS(*pte);
+     if((mem = kalloc()) == 0)
+diff --git a/user/user.h b/user/user.h
+index b71ecda..2c61221 100644
+--- a/user/user.h
++++ b/user/user.h
+@@ -23,6 +23,9 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++void* mmap(void *, int, int, int, int, uint);
++int munmap(void *, int);
++
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff --git a/user/usys.pl b/user/usys.pl
+index 01e426e..d23b9cc 100755
+--- a/user/usys.pl
++++ b/user/usys.pl
+@@ -36,3 +36,5 @@ entry("getpid");
+ entry("sbrk");
+ entry("sleep");
+ entry("uptime");
++entry("mmap");
++entry("munmap");

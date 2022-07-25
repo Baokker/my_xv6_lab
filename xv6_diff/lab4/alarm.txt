@@ -1,0 +1,156 @@
+diff --git a/Makefile b/Makefile
+index b8ff6fe..1fa367e 100644
+--- a/Makefile
++++ b/Makefile
+@@ -175,7 +175,9 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
+-	$U/_alarmtest\
++
++
++
+ 
+ ifeq ($(LAB),$(filter $(LAB), pgtbl lock))
+ UPROGS += \
+diff --git a/kernel/proc.c b/kernel/proc.c
+index 4a11c7c..dab1e1d 100644
+--- a/kernel/proc.c
++++ b/kernel/proc.c
+@@ -105,12 +105,7 @@ allocproc(void)
+   return 0;
+ 
+ found:
+-  p->pid = allocpid(); 
+-
+-  // set alarm related parameters
+-  p->alarm_interval = 0;
+-  p->alarm_ticks = 0;
+-  p->alarm_handler = 0;
++  p->pid = allocpid();
+ 
+   // Allocate a trapframe page.
+   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+diff --git a/kernel/proc.h b/kernel/proc.h
+index 0b69bca..9c16ea7 100644
+--- a/kernel/proc.h
++++ b/kernel/proc.h
+@@ -103,10 +103,4 @@ struct proc {
+   struct file *ofile[NOFILE];  // Open files
+   struct inode *cwd;           // Current directory
+   char name[16];               // Process name (debugging)
+-
+-  // add for alarm
+-  int alarm_interval;
+-  int alarm_ticks;
+-  uint64 alarm_handler;
+-  struct trapframe alarm_trapframe;
+ };
+diff --git a/kernel/syscall.c b/kernel/syscall.c
+index 24bfccd..c1b3670 100644
+--- a/kernel/syscall.c
++++ b/kernel/syscall.c
+@@ -104,8 +104,6 @@ extern uint64 sys_unlink(void);
+ extern uint64 sys_wait(void);
+ extern uint64 sys_write(void);
+ extern uint64 sys_uptime(void);
+-extern uint64 sys_sigalarm(void);
+-extern uint64 sys_sigreturn(void);
+ 
+ static uint64 (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -129,8 +127,6 @@ static uint64 (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
+-[SYS_sigalarm] sys_sigalarm,
+-[SYS_sigreturn] sys_sigreturn,
+ };
+ 
+ void
+diff --git a/kernel/syscall.h b/kernel/syscall.h
+index c09f4bd..bc5f356 100644
+--- a/kernel/syscall.h
++++ b/kernel/syscall.h
+@@ -20,5 +20,3 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
+-#define SYS_sigalarm 22
+-#define SYS_sigreturn 23
+\ No newline at end of file
+diff --git a/kernel/sysproc.c b/kernel/sysproc.c
+index 52dab92..a520959 100644
+--- a/kernel/sysproc.c
++++ b/kernel/sysproc.c
+@@ -97,23 +97,3 @@ sys_uptime(void)
+   release(&tickslock);
+   return xticks;
+ }
+-
+-uint64 sys_sigalarm(void){
+-  int interval;
+-  uint64 handler;
+-
+-  if (argint(0, &interval) < 0)
+-    return -1;
+-  if (argaddr(1, &handler) < 0)
+-    return -1;
+-  
+-  myproc()->alarm_interval = interval;
+-  myproc()->alarm_handler = handler;
+-  return 0;
+-}
+-
+-uint64 sys_sigreturn(void){
+-  memmove(myproc()->trapframe, &(myproc()->alarm_trapframe), sizeof(struct trapframe));
+-  myproc()->alarm_ticks = 0;
+-  return 0;
+-}
+\ No newline at end of file
+diff --git a/kernel/trap.c b/kernel/trap.c
+index b37f209..a63249e 100644
+--- a/kernel/trap.c
++++ b/kernel/trap.c
+@@ -77,15 +77,8 @@ usertrap(void)
+     exit(-1);
+ 
+   // give up the CPU if this is a timer interrupt.
+-  if(which_dev == 2){
+-    if (p->alarm_interval){
+-      if (++p->alarm_ticks == p->alarm_interval){
+-        memmove(&(p->alarm_trapframe), p->trapframe, sizeof(*(p->trapframe)));
+-        p->trapframe->epc = p->alarm_handler;
+-      }
+-    }
++  if(which_dev == 2)
+     yield();
+-  }
+ 
+   usertrapret();
+ }
+diff --git a/user/user.h b/user/user.h
+index be56483..b71ecda 100644
+--- a/user/user.h
++++ b/user/user.h
+@@ -24,10 +24,6 @@ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
+ 
+-// add new alarm
+-int sigalarm(int ticks, void (*handler)());
+-int sigreturn(void);
+-
+ // ulib.c
+ int stat(const char*, struct stat*);
+ char* strcpy(char*, const char*);
+diff --git a/user/usys.pl b/user/usys.pl
+index fa548b0..01e426e 100755
+--- a/user/usys.pl
++++ b/user/usys.pl
+@@ -36,5 +36,3 @@ entry("getpid");
+ entry("sbrk");
+ entry("sleep");
+ entry("uptime");
+-entry("sigalarm");
+-entry("sigreturn");

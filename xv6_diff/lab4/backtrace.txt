@@ -1,0 +1,60 @@
+diff --git a/kernel/defs.h b/kernel/defs.h
+index 4b9bbc0..137c786 100644
+--- a/kernel/defs.h
++++ b/kernel/defs.h
+@@ -80,6 +80,7 @@ int             pipewrite(struct pipe*, uint64, int);
+ void            printf(char*, ...);
+ void            panic(char*) __attribute__((noreturn));
+ void            printfinit(void);
++void            backtrace(void);
+ 
+ // proc.c
+ int             cpuid(void);
+diff --git a/kernel/printf.c b/kernel/printf.c
+index e1347de..62de816 100644
+--- a/kernel/printf.c
++++ b/kernel/printf.c
+@@ -132,3 +132,12 @@ printfinit(void)
+   initlock(&pr.lock, "pr");
+   pr.locking = 1;
+ }
++
++void backtrace(void){
++  printf("backtrace:\n");
++  uint64 fp = r_fp();
++  while (PGROUNDDOWN(fp) < PGROUNDUP(fp)){
++    printf("%p\n", *(uint64*)(fp - 8));
++    fp = *(uint64*)(fp - 16);
++  }
++}
+diff --git a/kernel/riscv.h b/kernel/riscv.h
+index 0aec003..84a8332 100644
+--- a/kernel/riscv.h
++++ b/kernel/riscv.h
+@@ -352,3 +352,12 @@ sfence_vma()
+ 
+ typedef uint64 pte_t;
+ typedef uint64 *pagetable_t; // 512 PTEs
++
++// add for backtrace
++static inline uint64
++r_fp()
++{
++  uint64 x;
++  asm volatile("mv %0, s0" : "=r" (x) );
++  return x;
++}
+\ No newline at end of file
+diff --git a/kernel/sysproc.c b/kernel/sysproc.c
+index e8bcda9..a520959 100644
+--- a/kernel/sysproc.c
++++ b/kernel/sysproc.c
+@@ -58,6 +58,8 @@ sys_sleep(void)
+   int n;
+   uint ticks0;
+ 
++  backtrace();
++
+   if(argint(0, &n) < 0)
+     return -1;
+   acquire(&tickslock);

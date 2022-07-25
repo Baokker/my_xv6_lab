@@ -1,0 +1,176 @@
+diff --git a/Makefile b/Makefile
+index d8509b1..7c258af 100644
+--- a/Makefile
++++ b/Makefile
+@@ -175,6 +175,7 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
++	$U/_symlinktest\
+ 
+ 
+ 
+diff --git a/kernel/fcntl.h b/kernel/fcntl.h
+index 44861b9..e5e38e3 100644
+--- a/kernel/fcntl.h
++++ b/kernel/fcntl.h
+@@ -3,3 +3,4 @@
+ #define O_RDWR    0x002
+ #define O_CREATE  0x200
+ #define O_TRUNC   0x400
++#define O_NOFOLLOW 0x800
+diff --git a/kernel/stat.h b/kernel/stat.h
+index 19543af..f218420 100644
+--- a/kernel/stat.h
++++ b/kernel/stat.h
+@@ -1,6 +1,7 @@
+ #define T_DIR     1   // Directory
+ #define T_FILE    2   // File
+ #define T_DEVICE  3   // Device
++#define T_SYMLINK 4   // symlink
+ 
+ struct stat {
+   int dev;     // File system's disk device
+diff --git a/kernel/syscall.c b/kernel/syscall.c
+index c1b3670..b9827ba 100644
+--- a/kernel/syscall.c
++++ b/kernel/syscall.c
+@@ -104,6 +104,7 @@ extern uint64 sys_unlink(void);
+ extern uint64 sys_wait(void);
+ extern uint64 sys_write(void);
+ extern uint64 sys_uptime(void);
++extern uint64 sys_symlink(void);
+ 
+ static uint64 (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -127,6 +128,7 @@ static uint64 (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_symlink]   sys_symlink,
+ };
+ 
+ void
+diff --git a/kernel/syscall.h b/kernel/syscall.h
+index bc5f356..13818da 100644
+--- a/kernel/syscall.h
++++ b/kernel/syscall.h
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_symlink 22
+diff --git a/kernel/sysfile.c b/kernel/sysfile.c
+index 5dc453b..da3c950 100644
+--- a/kernel/sysfile.c
++++ b/kernel/sysfile.c
+@@ -303,19 +303,39 @@ sys_open(void)
+       end_op();
+       return -1;
+     }
+-  } else {
+-    if((ip = namei(path)) == 0){
+-      end_op();
+-      return -1;
+-    }
+-    ilock(ip);
+-    if(ip->type == T_DIR && omode != O_RDONLY){
+-      iunlockput(ip);
+-      end_op();
+-      return -1;
++  } 
++  else {
++    int max_depth = 20, depth = 0;
++    while (1) {
++      if ((ip = namei(path)) == 0) {
++        end_op();
++        return -1;
++      }
++      ilock(ip);
++      if (ip->type == T_SYMLINK && (omode & O_NOFOLLOW) == 0) {
++        if (++depth > max_depth) {
++          iunlockput(ip);
++          end_op();
++          return -1;
++        }
++        if (readi(ip, 0, (uint64)path, 0, MAXPATH) < MAXPATH) {
++          iunlockput(ip);
++          end_op();
++          return -1;
++        }
++        iunlockput(ip);
++      }
++      else
++        break;
+     }
+   }
+ 
++  if(ip->type == T_DIR && omode != O_RDONLY){
++    iunlockput(ip);
++    end_op();
++    return -1;
++  }
++
+   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
+     iunlockput(ip);
+     end_op();
+@@ -344,7 +364,7 @@ sys_open(void)
+   if((omode & O_TRUNC) && ip->type == T_FILE){
+     itrunc(ip);
+   }
+-
++  
+   iunlock(ip);
+   end_op();
+ 
+@@ -484,3 +504,27 @@ sys_pipe(void)
+   }
+   return 0;
+ }
++
++uint64 sys_symlink(void){
++  char path[MAXPATH], target[MAXPATH];
++  struct inode *ip;
++
++  if (argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
++    return -1;
++
++  begin_op();
++  if ((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
++    end_op();
++    return -1;
++  }
++
++  if (writei(ip, 0, (uint64)target, 0, MAXPATH) < MAXPATH){
++    iunlockput(ip);
++    end_op();
++    return -1;
++  }
++
++  iunlockput(ip);
++  end_op();
++  return 0;
++}
+\ No newline at end of file
+diff --git a/user/user.h b/user/user.h
+index b71ecda..f26ce80 100644
+--- a/user/user.h
++++ b/user/user.h
+@@ -23,6 +23,7 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int symlink(const char*, const char*);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff --git a/user/usys.pl b/user/usys.pl
+index 01e426e..65a8d6b 100755
+--- a/user/usys.pl
++++ b/user/usys.pl
+@@ -36,3 +36,4 @@ entry("getpid");
+ entry("sbrk");
+ entry("sleep");
+ entry("uptime");
++entry("symlink");
+\ No newline at end of file

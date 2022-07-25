@@ -1,0 +1,181 @@
+diff --git a/Makefile b/Makefile
+index 1c07efd..4b420e3 100644
+--- a/Makefile
++++ b/Makefile
+@@ -150,7 +150,7 @@ UPROGS=\
+ 	$U/_wc\
+ 	$U/_zombie\
+ 	$U/_trace\
+-
++	$U/_sysinfotest
+ 
+ 
+ ifeq ($(LAB),trap)
+diff --git a/kernel/defs.h b/kernel/defs.h
+index 4b9bbc0..c53499d 100644
+--- a/kernel/defs.h
++++ b/kernel/defs.h
+@@ -63,6 +63,8 @@ void            ramdiskrw(struct buf*);
+ void*           kalloc(void);
+ void            kfree(void *);
+ void            kinit(void);
++// add freememory
++void            freememory(uint64* result);
+ 
+ // log.c
+ void            initlog(int, struct superblock*);
+@@ -104,6 +106,8 @@ void            yield(void);
+ int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
+ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
+ void            procdump(void);
++// add procnum
++void            procnum(uint64* result);
+ 
+ // swtch.S
+ void            swtch(struct context*, struct context*);
+diff --git a/kernel/kalloc.c b/kernel/kalloc.c
+index fa6a0ac..24c519e 100644
+--- a/kernel/kalloc.c
++++ b/kernel/kalloc.c
+@@ -39,6 +39,17 @@ freerange(void *pa_start, void *pa_end)
+     kfree(p);
+ }
+ 
++// add function to get free memory
++void freememory(uint64* result){
++  *result = 0;
++  struct run *cursor = kmem.freelist;
++  acquire(&kmem.lock); // lock it
++  while(cursor){
++    cursor=cursor->next;
++    (*result) += PGSIZE;
++  }
++  release(&kmem.lock);
++}
+ // Free the page of physical memory pointed at by v,
+ // which normally should have been returned by a
+ // call to kalloc().  (The exception is when
+diff --git a/kernel/proc.c b/kernel/proc.c
+index 01c178a..dea99fa 100644
+--- a/kernel/proc.c
++++ b/kernel/proc.c
+@@ -494,6 +494,16 @@ scheduler(void)
+   }
+ }
+ 
++void procnum(uint64* result){
++  *result = 0;
++  // must use 'struct' in c
++  for (struct proc *p = proc;p < &proc[NPROC];p++){
++    if (p->state != UNUSED){
++      (*result)++;
++    }
++  }
++}
++
+ // Switch to scheduler.  Must hold only p->lock
+ // and have changed proc->state. Saves and restores
+ // intena because intena is a property of this
+diff --git a/kernel/syscall.c b/kernel/syscall.c
+index b8d2add..67268ff 100644
+--- a/kernel/syscall.c
++++ b/kernel/syscall.c
+@@ -105,6 +105,7 @@ extern uint64 sys_wait(void);
+ extern uint64 sys_write(void);
+ extern uint64 sys_uptime(void);
+ extern uint64 sys_trace(void);
++extern uint64 sys_sysinfo(void);
+ 
+ static uint64 (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -129,6 +130,7 @@ static uint64 (*syscalls[])(void) = {
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
+ [SYS_trace]   sys_trace,
++[SYS_sysinfo]   sys_sysinfo,
+ };
+ 
+ // extra array for the name of syscall
+@@ -155,6 +157,7 @@ static char *syscallname[] = {
+ [SYS_mkdir]   "mkdir",
+ [SYS_close]   "close",
+ [SYS_trace]   "trace",
++[SYS_sysinfo] "sysinfo",
+ };
+ 
+ void
+diff --git a/kernel/syscall.h b/kernel/syscall.h
+index cc112b9..7961890 100644
+--- a/kernel/syscall.h
++++ b/kernel/syscall.h
+@@ -21,3 +21,4 @@
+ #define SYS_mkdir  20
+ #define SYS_close  21
+ #define SYS_trace  22
++#define SYS_sysinfo  23
+diff --git a/kernel/sysproc.c b/kernel/sysproc.c
+index bd3a0be..7f50364 100644
+--- a/kernel/sysproc.c
++++ b/kernel/sysproc.c
+@@ -7,6 +7,9 @@
+ #include "spinlock.h"
+ #include "proc.h"
+ 
++// sysinfo struct
++#include "sysinfo.h"
++
+ uint64
+ sys_exit(void)
+ {
+@@ -99,4 +102,23 @@ sys_uptime(void)
+ uint64 sys_trace(void){
+   argint(0,&(myproc()->mask));
+   return 0;
++}
++
++uint64 sys_sysinfo(void){
++  // destination
++  uint64 addr;
++  if (argaddr(0, &addr) < 0){
++    return -1;
++  }
++
++  struct sysinfo info;
++  freememory(&info.freemem);
++  procnum(&info.nproc);
++
++
++  // copyout from kernel to user
++  if (copyout(myproc()->pagetable, addr, (char *)&info, sizeof info) < 0)
++    return -1;
++
++  return 0;
+ }
+\ No newline at end of file
+diff --git a/user/user.h b/user/user.h
+index 7c62ad2..c3ad972 100644
+--- a/user/user.h
++++ b/user/user.h
+@@ -25,6 +25,10 @@ int sleep(int);
+ int uptime(void);
+ int trace(int mask); // add trace
+ 
++// add sysinfo
++struct sysinfo;
++int sysinfo(struct sysinfo *);
++
+ // ulib.c
+ int stat(const char*, struct stat*);
+ char* strcpy(char*, const char*);
+diff --git a/user/usys.pl b/user/usys.pl
+index 04fc322..cc1f672 100755
+--- a/user/usys.pl
++++ b/user/usys.pl
+@@ -36,4 +36,6 @@ entry("getpid");
+ entry("sbrk");
+ entry("sleep");
+ entry("uptime");
+-entry("trace")
++entry("trace");
++entry("sysinfo");
++
