@@ -386,6 +386,12 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   - 先在一个命令行中`make qemu`
   - 再在另外一个命令行中`riscv64-unknown-elf-gdb kernel/kernel`，然后`target remote localhost:26000`
   - 接下来就是gdb的常规操作，如b，s，n等
+    - `b xxx`添加断点
+    - `c` continue
+    - `s` step，进入函数
+    - `n`next，但不进入函数
+    - `d`删除所有断点
+    - `
 
 - usertests 在 reparent2 的时候出现了 panic: kvmmap，最后发现是释放页表的时候出现了错误
   ```c
