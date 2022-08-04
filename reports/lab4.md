@@ -7,7 +7,7 @@
 ### RISC-V assembly 
 
 1. 运行make fs.img
-   ![image-20220715213128807](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220715213128807.png)
+   ![image-20220715213128807](img\image-20220715213128807.png)
 
 回答：
 
@@ -27,7 +27,7 @@
 
    可以看到，编译器直接计算出了结果12
 
-3. ![image-20220731133518705](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731133518705.png)
+3. ![image-20220731133518705](img\image-20220731133518705.png)
    printf的地址为638
 
 4. ra=pc+4=0x34+4=0x38
@@ -35,9 +35,9 @@
 5. 输出：HE110 World
 
 6. y输出的是a2的内容
-   ![image-20220731141133622](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731141133622.png)
+   ![image-20220731141133622](img\image-20220731141133622.png)
 
-   ![image-20220731141110370](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731141110370.png)
+   ![image-20220731141110370](img\image-20220731141110370.png)
 
 ## backtrace
 
@@ -239,4 +239,4 @@ uint64 sys_sigreturn(void){
 
 ## 实验心得
 
-![image-20220731162859572](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731162859572.png)
+![image-20220731162859572](img\image-20220731162859572.png)

@@ -57,7 +57,7 @@
    trace
    ```
 
-   ![2-1](D:\GitHub_Desktop\my_xv6_lab\reports\img\2-1.png)
+   ![2-1](img\2-1.png)
 
 4. 包括
 

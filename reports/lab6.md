@@ -283,4 +283,4 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
 ## 实验心得
 
-![image-20220731162838248](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731162838248.png)
+![image-20220731162838248](img\image-20220731162838248.png)

@@ -1,7 +1,7 @@
 # Lab 10 mmap
 
 ## 实验目的
-
+mmap是一种内存映射的方法，把一个文件映射到进程的地址空间，从而实现文件的磁盘地址与虚拟地址空间的关联。这样，进程可以直接用指针操作这段内存，待操作结束后，系统会自动将脏页面写回到对应的磁盘上。这样一来不必调用read/write等操作，二来可以实现不同进程间的文件共享。
 ## 实验步骤
 
 先在UPROGS中加入mmaptest
@@ -139,8 +139,9 @@ struct vma
     p->killed = 1;
 ```
 
-在kernel/sysfile.c中实现这两个函数
-
+在kernel/sysfile.c中实现这两个函数。
+mmap先接收参数，并判断其合法性，再遍历vma数组，找到未使用的vma，并添加进去
+munmap
 ```c
 uint64 sys_mmap(void) {
   uint64 addr;
@@ -265,6 +266,6 @@ fork
 
 ## 实验中遇到的问题及解决办法
 
-![image-20220724105722937](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220724105722937.png)
+![image-20220724105722937](img\image-20220724105722937.png)
 
 ## 实验心得

@@ -32,7 +32,7 @@
 
 （这部分的源头在[RISC-V privileged instructions](https://github.com/riscv/riscv-isa-manual/releases/download/draft-20200727-8088ba4/riscv-privileged.pdf)中
 
-![image-20220731160958770](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731160958770.png))
+![image-20220731160958770](img\image-20220731160958770.png))
 
 因此，如是修改kernel/trap.c
 
@@ -152,6 +152,6 @@
 
 - 位运算。越发感受到c语言中采用位运算的精妙。通过简单的左移右移实现某一位的确认，或是2的次数的乘除；通过&|~等符号进行位运算，用一句代码解决问题，确实很酷
 
-![image-20220731162648622](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731162648622.png)
+![image-20220731162648622](img\image-20220731162648622.png)
 
-![image-20220731162703979](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731162703979.png)
+![image-20220731162703979](img\image-20220731162703979.png)

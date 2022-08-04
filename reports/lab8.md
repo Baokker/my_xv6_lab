@@ -242,4 +242,4 @@ bunpin(struct buf *b) {
 
 ## 实验心得
 
-![image-20220731164001211](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731164001211.png)
+![image-20220731164001211](img\image-20220731164001211.png)

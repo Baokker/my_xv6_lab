@@ -160,4 +160,4 @@ pthread_mutex_t lock[NBUCKET];
 
 ## 实验心得
 
-![image-20220731163526830](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731163526830.png)
+![image-20220731163526830](img\image-20220731163526830.png)

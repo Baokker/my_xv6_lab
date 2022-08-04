@@ -52,7 +52,7 @@ void vmprint(pagetable_t pagetable){
 
 PTE_*位实际上就是riscv的地址的某一特定位，如PTE_W就表示是否允许写，PTE_V表示是否有效。
 
-![image-20220731105259736](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731105259736.png)
+![image-20220731105259736](img\image-20220731105259736.png)
 
 最后在kernel/exec.c中加入pid=1时的判断，使其在初始时能打印
 
@@ -68,11 +68,11 @@ PTE_*位实际上就是riscv的地址的某一特定位，如PTE_W就表示是�
 
 对实验中问题的解答：
 
-![image-20220731131044825](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731131044825.png)
+![image-20220731131044825](img\image-20220731131044825.png)
 
-![image-20220731131101427](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731131101427.png)
+![image-20220731131101427](img\image-20220731131101427.png)
 
-![image-20220731131203381](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731131203381.png)
+![image-20220731131203381](img\image-20220731131203381.png)
 
 可知，page0对应程序的代码段和数据段，page2则对应用户栈，中间的page1是guard page，因此也不能用于映射。
 
@@ -407,4 +407,4 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 
 ## 实验心得
 
-![image-20220731110821337](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220731110821337.png)
+![image-20220731110821337](img\image-20220731110821337.png)

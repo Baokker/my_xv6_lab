@@ -246,6 +246,6 @@ user/user.h
 
 ## 实验中遇到的问题及解决办法
 
-![image-20220724100600976](D:\GitHub_Desktop\my_xv6_lab\reports\img\image-20220724100600976.png)
+![image-20220724100600976](img\image-20220724100600976.png)
 
 ## 实验心得
