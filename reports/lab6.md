@@ -277,10 +277,13 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       return -1;
 ```
 
-
-
 ## 实验中遇到的问题及解决办法
+
+位操作的运算比划了半天，简简单单几个& ~还是太精妙了
+
+还有就是<<12实现计算页数真的很精妙。
 
 ## 实验心得
 
 ![image-20220731162838248](img\image-20220731162838248.png)
+

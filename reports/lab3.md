@@ -1,6 +1,8 @@
-# Lab 3
+# Lab 3 Page Tables
 
 ## 实验目的
+
+探索页表的相关，主要是修改以简化从用户空间拷贝到内核空间的操作
 
 最难的一个实验！太痛苦了...
 
@@ -385,13 +387,21 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 
   - 先在一个命令行中`make qemu`
   - 再在另外一个命令行中`riscv64-unknown-elf-gdb kernel/kernel`，然后`target remote localhost:26000`
-  - 接下来就是gdb的常规操作，如b，s，n等
+  - 接下来就是gdb的常规操作，如`b`，`s`，`n`等
     - `b xxx`添加断点
     - `c` continue
     - `s` step，进入函数
     - `n`next，但不进入函数
     - `d`删除所有断点
-    - `
+    - `i xxx`查看信息
+    - 这里还有特殊的一点，即调试特定的文件时（以xargs为例）：
+      ```bash
+      (gdb) file user/_xargs
+      (gdb) b main
+      (gdb) c
+      ```
+    
+      
 
 - usertests 在 reparent2 的时候出现了 panic: kvmmap，最后发现是释放页表的时候出现了错误
   ```c
@@ -406,5 +416,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   没有正确释放内存，导致大量内存泄漏，kvmmap 分配页表项所需内存失败。在这里卡了很久，最后发现是这里写错了，很难过。
 
 ## 实验心得
+
+不容易，尤其是一开始进去的时候，start直接panic，连个ls都是报错，被迫学会gdb调试...跑通的时候确实很开心。
 
 ![image-20220731110821337](img\image-20220731110821337.png)

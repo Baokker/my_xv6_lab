@@ -4,11 +4,15 @@
 
 ## 实验目的
 
+该实验与xv6的文件系统相关，主要是实现了两个功能，一是增加了一个二级页表，从而扩充了xv6的文件系统大小；二是实现了软链接
+
 ## 实验步骤
 
 ### Large files
 
-就像课本里的inode一样，11个块，1个一级页表，1个二级页表
+xv6原先的inode有12个直接索引，和1个一级索引。在此需要将一个直接索引修改为二级索引
+
+就像课本里的inode一样，11个块，1个一级索引，1个二级索引
 
 首先修改and增加几个宏定义，将原先直接访问的12个块改成11个，再定义二级页表，最大文件
 
@@ -112,31 +116,25 @@ struct inode {
 
 ### Symbolic links
 
+此处的软链接，类似于Windows的快捷方式，打开时会自动打开指向的文件。
+
 首先，像lab2一样，给symlink添加系统调用
 
 user/usys.pl
 
 ```perl
-entry("sbrk");
-entry("sleep");
-entry("uptime");
 entry("symlink");
 ```
 
 kernel/syscall.h
 
 ```c
-#define SYS_link   19
-#define SYS_mkdir  20
-#define SYS_close  21
 #define SYS_symlink 22
 ```
 
 kernel/syscall.c
 
 ```c
-extern uint64 sys_wait(void);
-extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
 extern uint64 sys_symlink(void);
 
@@ -148,6 +146,34 @@ static uint64 (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 [SYS_symlink]   sys_symlink,
 };
+```
+
+实现sym_link，先读取参数，同时开启事务，避免提交出错。新建一个inode并写入相关数据
+
+```c
+uint64 sys_symlink(void){
+  char path[MAXPATH], target[MAXPATH];
+  struct inode *ip;
+
+  if (argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+  if ((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+    end_op();
+    return -1;
+  }
+
+  if (writei(ip, 0, (uint64)target, 0, MAXPATH) < MAXPATH){
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  iunlockput(ip);
+  end_op();
+  return 0;
+} 
 ```
 
 接下来，在kernel/stat.h中增加T_SYMLINK新类型
@@ -168,7 +194,7 @@ kernel/fcntl.h中添加O_NOFOLLOW
 #define O_NOFOLLOW 0x800
 ```
 
-修改sys_open，设置最大搜索深度为20
+修改sys_open，设置最大搜索深度为20，如果到达20次，则说明打开文件失败。
 
 ```c
       end_op();
@@ -212,40 +238,15 @@ kernel/fcntl.h中添加O_NOFOLLOW
     end_op();
 ```
 
-实现sym_link
-
-```c
-uint64 sys_symlink(void){
-  char path[MAXPATH], target[MAXPATH];
-  struct inode *ip;
-
-  if (argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
-    return -1;
-
-  begin_op();
-  if ((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
-    end_op();
-    return -1;
-  }
-
-  if (writei(ip, 0, (uint64)target, 0, MAXPATH) < MAXPATH){
-    iunlockput(ip);
-    end_op();
-    return -1;
-  }
-
-  iunlockput(ip);
-  end_op();
-  return 0;
-} 
-  1  
-user/user.h
-```
-
-
 
 ## 实验中遇到的问题及解决办法
 
-![image-20220724100600976](img\image-20220724100600976.png)
+一开始不知道begin_op和end_op是什么，查阅后方知，原来是与磁盘交互时调用系统调用都得先用这两句，联想到了数据库里的事务概念，都是为了避免写到一半突然宕机等情况导致系统被破坏，因此先弄好恢复信息，完全写入后方commmit。
 
 ## 实验心得
+
+一开始做得有些囫囵吞枣，只知道inode（因为和Linux上的很类似），但是不知道dinode是什么。查阅后方知，dinode原来是磁盘上缓存块。
+
+另外查阅后发现，xv6的文件系统其实非常复杂（在考试里，可能是进程和内存管理出得比较难），其整个文件系统包括了7层：文件描述符、路径名、目录、inode、日志、缓冲区、磁盘。感慨万分。
+
+![](img/image-20220724100600976.png)

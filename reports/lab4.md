@@ -2,6 +2,8 @@
 
 ## 实验目的
 
+本次实验探索如何在trap中实现系统调用。
+
 ## 实验步骤
 
 ### RISC-V assembly 
@@ -37,7 +39,7 @@
 6. y输出的是a2的内容
    ![image-20220731141133622](img\image-20220731141133622.png)
 
-   ![image-20220731141110370](img\image-20220731141110370.png)
+![image-20220731141110370](img\image-20220731141110370.png)
 
 ## backtrace
 
@@ -91,6 +93,8 @@ void backtrace(void){
 
 ### Alarm
 
+在一些应用场景中，我们希望，当一些进程运行了一段时间后，os会发出警告。这对于一些我们想要限制cpu，或者想定期采取一些行动的进程特别有用。
+
 首先是第一部分，即test0
 
 修改makefile，加入alarmtest
@@ -141,7 +145,7 @@ kernel/syscall.h增加
 
 kernel/syscall.c
 
-```
+```c
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
@@ -236,6 +240,8 @@ uint64 sys_sigreturn(void){
 ```
 
 ## 实验中遇到的问题及解决办法
+
+设trapframe这一块卡了很久，想来还是对这一块理解不深，我确实知道这是系统关键寄存器，但对我来说它仿佛就像一排硬件电管，难以想象和一个结构体联系起来。查阅后得知，这一个结构体主要还是存储系统中几个关键的寄存器。
 
 ## 实验心得
 
